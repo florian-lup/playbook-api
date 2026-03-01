@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 import jwt
@@ -5,9 +6,12 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWK
 
+from app.config import settings
 from app.services.perplexity import PerplexityService
 
-_bearer = HTTPBearer()
+logger = logging.getLogger(__name__)
+
+_bearer = HTTPBearer(auto_error=not settings.auth_disabled)
 
 
 def _find_signing_key(token: str, jwks: list[PyJWK]) -> PyJWK:
@@ -21,8 +25,17 @@ def _find_signing_key(token: str, jwks: list[PyJWK]) -> PyJWK:
 
 def get_current_user(
     request: Request,
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer)
+    ] = None,
 ) -> str:
+    if settings.auth_disabled:
+        logger.debug("Auth disabled — using dev-user")
+        return "dev-user"
+
+    if credentials is None:
+        raise HTTPException(status_code=403, detail="Not authenticated")
+
     token = credentials.credentials
     try:
         jwks: list[PyJWK] = request.app.state.jwks

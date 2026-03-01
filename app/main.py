@@ -27,10 +27,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     client = Perplexity(api_key=settings.perplexity_api_key)
     app.state.perplexity_service = PerplexityService(client)
 
-    jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-    jwks_client = PyJWKClient(jwks_url)
-    app.state.jwks = jwks_client.get_jwk_set().keys
-    logger.info("JWKS loaded from %s (%d keys)", jwks_url, len(app.state.jwks))
+    if settings.auth_disabled:
+        logger.warning("Auth is DISABLED — do not use in production")
+        app.state.jwks = []
+    else:
+        jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+        jwks_client = PyJWKClient(jwks_url)
+        app.state.jwks = jwks_client.get_jwk_set().keys
+        logger.info("JWKS loaded from %s (%d keys)", jwks_url, len(app.state.jwks))
 
     yield
 

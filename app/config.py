@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     )
 
     perplexity_api_key: str
-    supabase_url: str
+    supabase_url: str = ""
+    auth_disabled: bool = False
     cors_origins: list[str] = ["*"]
     rate_limit: str = "5/minute"
 
