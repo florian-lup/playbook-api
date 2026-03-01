@@ -4,11 +4,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from jwt import PyJWKClient
 from perplexity import Perplexity
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.routes import chat, health
 from app.config import settings
+from app.limiter import limiter
 from app.services.perplexity import PerplexityService
+
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,6 +26,12 @@ logging.basicConfig(
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     client = Perplexity(api_key=settings.perplexity_api_key)
     app.state.perplexity_service = PerplexityService(client)
+
+    jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+    jwks_client = PyJWKClient(jwks_url)
+    app.state.jwks = jwks_client.get_jwk_set().keys
+    logger.info("JWKS loaded from %s (%d keys)", jwks_url, len(app.state.jwks))
+
     yield
 
 
@@ -28,6 +40,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

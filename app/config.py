@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     )
 
     perplexity_api_key: str
+    supabase_url: str
     cors_origins: list[str] = ["*"]
+    rate_limit: str = "5/minute"
 
 
 settings = Settings()  # type: ignore[call-arg]
