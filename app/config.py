@@ -3,7 +3,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 SYSTEM_PROMPT = (
     "You are a helpful AI search assistant. "
     "Provide concise, well-researched answers. "
-    "Do not include citation numbers or reference markers in your response."
 )
 
 

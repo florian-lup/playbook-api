@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -6,6 +7,8 @@ from perplexity import Perplexity
 
 from app.config import SYSTEM_PROMPT
 from app.models.chat import ChatMessage, SearchMode
+
+_CITATION_RE = re.compile(r"\[\d+\]")
 
 logger = logging.getLogger(__name__)
 
@@ -55,4 +58,6 @@ class PerplexityService:
         for chunk in stream:
             delta = chunk.choices[0].delta
             if delta.content:
-                yield delta.content
+                cleaned = _CITATION_RE.sub("", delta.content)
+                if cleaned:
+                    yield cleaned
