@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="Playbook Server",
+    title="Playbook API",
     version="0.1.0",
     lifespan=lifespan,
 )
