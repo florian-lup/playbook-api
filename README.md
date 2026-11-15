@@ -29,7 +29,7 @@ cp .env.example .env
 | `CORS_ORIGINS` | no | `["*"]` | JSON list of allowed origins, e.g. `["http://localhost:1420"]` |
 | `RATE_LIMIT` | no | `5/minute` | SlowAPI limit for `POST /api/chat`, keyed by user id (or client IP when no user is set) |
 
-With auth enabled, `SUPABASE_URL` must be set. The server loads signing keys at startup and will fail to start if that URL is empty or unreachable.
+With auth enabled, `SUPABASE_URL` must be set. The server loads signing keys at startup and will fail to start if that URL is empty or unreachable. Later requests reuse that cache. If a token's key id is missing from it, or the cache has expired, the keys are fetched again. If that fetch fails, verification continues with the keys already cached.
 
 ## Run
 
@@ -54,12 +54,13 @@ The server starts at `http://localhost:8000`.
 Authorization: Bearer <supabase-jwt>
 ```
 
-The token is verified against the project's JWKS (`ES256`, `RS256`, or `HS256`) with audience `authenticated`. The user id is the JWT `sub` claim.
+The token is verified locally against the project's JWKS. The signing key is chosen by the token's `kid`, and the token must use that key's algorithm. Audience must be `authenticated`, and `exp` and `sub` are required. The user id is the `sub` claim.
 
 | Status | When |
 | --- | --- |
 | 403 | Missing token |
-| 401 | Invalid or expired token |
+| 401 | Invalid or expired token, or a token missing `exp` or `sub` |
+| 503 | No signing keys are cached and the JWKS endpoint could not be reached |
 | 429 | Rate limit exceeded |
 
 Set `AUTH_DISABLED=true` to skip verification during local development. Requests are then attributed to `dev-user`.

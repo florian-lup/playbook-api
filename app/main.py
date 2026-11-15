@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from jwt import PyJWKClient
+from jwt.exceptions import PyJWKClientConnectionError
 from perplexity import Perplexity
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -15,6 +16,25 @@ from app.limiter import limiter
 from app.services.perplexity import PerplexityService
 
 logger = logging.getLogger(__name__)
+
+
+class RefreshablePyJWKClient(PyJWKClient):
+    """Keep the last good JWKS when a refresh cannot reach Supabase.
+
+    PyJWKClient clears its cache if the fetch fails, which would reject tokens
+    signed by keys we already hold.
+    """
+
+    def fetch_data(self):
+        cache = self.jwk_set_cache
+        previous = cache.jwk_set_with_timestamp if cache is not None else None
+        try:
+            return super().fetch_data()
+        except PyJWKClientConnectionError:
+            if cache is not None and previous is not None:
+                cache.jwk_set_with_timestamp = previous
+            raise
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,12 +49,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if settings.auth_disabled:
         logger.warning("Auth is DISABLED — do not use in production")
-        app.state.jwks = []
+        app.state.jwks_client = None
     else:
         jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-        jwks_client = PyJWKClient(jwks_url)
-        app.state.jwks = jwks_client.get_jwk_set().keys
-        logger.info("JWKS loaded from %s (%d keys)", jwks_url, len(app.state.jwks))
+        jwks_client = RefreshablePyJWKClient(jwks_url)
+        signing_keys = jwks_client.get_signing_keys()
+        app.state.jwks_client = jwks_client
+        logger.info("JWKS loaded from %s (%d keys)", jwks_url, len(signing_keys))
 
     yield
 

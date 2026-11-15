@@ -4,7 +4,7 @@ from typing import Annotated
 import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import PyJWK
+from jwt import PyJWKClient, PyJWKClientConnectionError, PyJWKClientError
 
 from app.config import settings
 from app.services.perplexity import PerplexityService
@@ -12,15 +12,6 @@ from app.services.perplexity import PerplexityService
 logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=not settings.auth_disabled)
-
-
-def _find_signing_key(token: str, jwks: list[PyJWK]) -> PyJWK:
-    header = jwt.get_unverified_header(token)
-    kid = header.get("kid")
-    for key in jwks:
-        if key.key_id == kid:
-            return key
-    raise jwt.InvalidTokenError(f"No matching key found for kid={kid}")
 
 
 def get_current_user(
@@ -38,16 +29,29 @@ def get_current_user(
 
     token = credentials.credentials
     try:
-        jwks: list[PyJWK] = request.app.state.jwks
-        signing_key = _find_signing_key(token, jwks)
+        jwks_client: PyJWKClient = request.app.state.jwks_client
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if not isinstance(kid, str):
+            raise jwt.InvalidTokenError("Missing key id")
+        signing_key = jwks_client.get_signing_key(kid)
         payload = jwt.decode(
             token,
             signing_key.key,
-            algorithms=["ES256", "RS256", "HS256"],
+            algorithms=[signing_key.algorithm_name],
             audience="authenticated",
+            options={"require": ["exp", "sub"]},
         )
-        return payload["sub"]
-    except jwt.InvalidTokenError as exc:
+        user_id = payload["sub"]
+        if not isinstance(user_id, str) or not user_id:
+            raise jwt.InvalidTokenError("Missing subject")
+        return user_id
+    except PyJWKClientConnectionError as exc:
+        logger.warning("Failed to refresh Supabase JWKS: %s", exc)
+        raise HTTPException(
+            status_code=503, detail="Authentication unavailable"
+        ) from exc
+    except (jwt.InvalidTokenError, PyJWKClientError) as exc:
         raise HTTPException(
             status_code=401, detail="Invalid or expired token"
         ) from exc
